@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "CVAT Point Cloud Tweaker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Chỉnh hiển thị point cloud trong CVAT 3D (kích thước điểm, độ sáng, tương phản, màu). Chỉ đổi cách hiển thị, không đổi dữ liệu annotation.",
   "content_scripts": [
     {
-      "matches": ["https://cvat.edufun.ai/*", "https://app.cvat.ai/*"],
+      "matches": ["https://cvat.edufun.ai/*", "https://app.cvat.ai/*", "http://localhost/*", "http://127.0.0.1/*"],
       "js": ["tweak.js"],
       "run_at": "document_start",
       "world": "MAIN",
