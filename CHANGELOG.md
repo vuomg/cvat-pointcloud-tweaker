@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 ### Changed
+- Mỗi lần mở trang đều bắt đầu từ **giá trị gốc của CVAT** (mọi hệ số trung tính, mọi tùy chọn tắt). Cấu hình chỉ được khôi phục khi bật **Nhớ cấu hình cho lần mở sau** (mục Nâng cao). Trạng thái đóng/mở bảng vẫn luôn được nhớ.
+- Thanh kích thước điểm hiện thêm giá trị tuyệt đối và giá trị gốc CVAT đọc từ shader (ví dụ `×1.0 (= 0.05, gốc 0.05)`).
 - Bảng chỉnh gọn hơn: mặc định chỉ hiện Preset, Kích thước, Độ sáng, Tương phản và ô Tô màu theo độ cao. Các tham số còn lại nằm trong mục **Nâng cao** (đóng sẵn, trạng thái mở/đóng được nhớ). Hai thanh độ cao chỉ hiện khi bật Tô màu theo độ cao.
 
 ### Added

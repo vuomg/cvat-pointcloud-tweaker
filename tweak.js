@@ -17,7 +17,7 @@
     size: 1, brightness: 1, contrast: 1, gamma: 1, saturate: 1, hue: 0, grayscale: 0, invert: false,
     tintOn: false, tint: '#ffffff', bgOn: false, bg: '#000000',
     heightOn: false, hMin: -2, hMax: 4,
-    panelOpen: false, advOpen: false,
+    panelOpen: false, advOpen: false, persist: false,
   };
   const PRESETS = {
     'Mặc định': {},
@@ -26,7 +26,13 @@
     'Nền trắng': { size: 1.6, contrast: 1.2, invert: true, hue: 180 },
   };
   const S = Object.assign({}, DEFAULTS);
-  try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* ignore */ }
+  // Mặc định mỗi lần mở trang là GIÁ TRỊ GỐC CỦA CVAT (hệ số trung tính). Chỉ khôi phục cấu hình đã chỉnh
+  // khi người dùng bật "Nhớ cấu hình". Trạng thái đóng/mở bảng luôn được nhớ.
+  try {
+    const stored = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (stored.persist) Object.assign(S, stored);
+    else Object.assign(S, { panelOpen: !!stored.panelOpen, advOpen: !!stored.advOpen });
+  } catch (e) { /* ignore */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } };
 
   const seenUniforms = new Set();
@@ -36,6 +42,7 @@
 
   // Shader tô màu theo độ cao (trục z của point cloud, đơn vị mét): xanh dương (thấp) -> đỏ (cao).
   let heightInjected = false;
+  let lastBaseSize = null;   // kích thước điểm gốc do CVAT đặt (đọc từ uniform khi vẽ point cloud)
   const HEIGHT_DECL =
     'uniform float pctOn;\nuniform float pctMin;\nuniform float pctMax;\n' +
     'vec3 pctRamp(float t){ t=clamp(t,0.0,1.0); float h=(1.0-t)*0.72;' +
@@ -141,6 +148,7 @@
       if (!e) return;
       if (e.size && baseVal.has(e.size)) {
         o.uniform1f.call(gl, e.size, baseVal.get(e.size) * S.size);
+        if (count >= MIN_CLOUD_POINTS) lastBaseSize = baseVal.get(e.size);
       }
       if (e.pctOn && e.pctMin && e.pctMax) {
         o.uniform1f.call(gl, e.pctOn, S.heightOn ? 1 : 0);
@@ -210,7 +218,10 @@
 
   const SLIDERS = [
     // g: basic = luôn hiện; height = chỉ hiện khi bật màu theo độ cao; adv = nằm trong mục "Nâng cao" (mặc định đóng)
-    { g: 'basic', k: 'size', label: 'Kích thước điểm', min: 0.3, max: 8, step: 0.1, fmt: (v) => '×' + v.toFixed(1) },
+    {
+      g: 'basic', k: 'size', label: 'Kích thước điểm (×1.0 = gốc CVAT)', min: 0.3, max: 8, step: 0.1,
+      fmt: (v) => '×' + v.toFixed(1) + (lastBaseSize ? ` (= ${(lastBaseSize * v).toPrecision(3)}, gốc ${Number(lastBaseSize).toPrecision(3)})` : ''),
+    },
     { g: 'basic', k: 'brightness', label: 'Độ sáng', min: 0.3, max: 4, step: 0.05, fmt: (v) => v.toFixed(2) },
     { g: 'basic', k: 'contrast', label: 'Tương phản', min: 0.3, max: 4, step: 0.05, fmt: (v) => v.toFixed(2) },
     { g: 'height', k: 'hMin', label: 'Độ cao thấp nhất (xanh dương)', min: -10, max: 10, step: 0.1, fmt: (v) => v.toFixed(1) + ' m' },
@@ -252,6 +263,7 @@
       '<div id="pct-hrange">' + sliderHtml('height') + '</div>' +
       '<div class="row"><button id="pct-advbtn"></button></div>' +
       '<div id="pct-adv">' + sliderHtml('adv') +
+      '<div class="row"><input id="pct-persist" type="checkbox"><label for="pct-persist">Nhớ cấu hình cho lần mở sau</label></div>' +
       '<div class="row"><input id="pct-invert" type="checkbox"><label for="pct-invert">Đảo màu (nền trắng)</label></div>' +
       '<div class="row"><input id="pct-tintOn" type="checkbox"><label for="pct-tintOn">Đổi màu điểm</label>' +
       '<input id="pct-tint" type="color"></div>' +
@@ -272,6 +284,7 @@
       $('pct-advbtn').textContent = S.advOpen ? '▾ Ẩn nâng cao' : '▸ Nâng cao';
       $('pct-heightOn').checked = !!S.heightOn;
       $('pct-hstat').textContent = S.heightOn && !heightInjected ? '(chưa hỗ trợ)' : '';
+      $('pct-persist').checked = !!S.persist;
       $('pct-invert').checked = !!S.invert;
       $('pct-tintOn').checked = !!S.tintOn; $('pct-tint').value = S.tint;
       $('pct-bgOn').checked = !!S.bgOn; $('pct-bg').value = S.bg;
@@ -283,6 +296,7 @@
     });
     $('pct-advbtn').addEventListener('click', () => { S.advOpen = !S.advOpen; sync(); save(); });
     $('pct-heightOn').addEventListener('change', (e) => { S.heightOn = e.target.checked; sync(); changed(); });
+    $('pct-persist').addEventListener('change', (e) => { S.persist = e.target.checked; save(); });
     $('pct-invert').addEventListener('change', (e) => { S.invert = e.target.checked; changed(); });
     $('pct-tintOn').addEventListener('change', (e) => { S.tintOn = e.target.checked; changed(); });
     $('pct-tint').addEventListener('input', (e) => { S.tint = e.target.value; changed(); });
@@ -292,11 +306,11 @@
     $('pct-preset').addEventListener('change', (e) => {
       const p = PRESETS[e.target.value];
       if (!p) return;
-      Object.assign(S, DEFAULTS, p, { panelOpen: true, advOpen: S.advOpen });
+      Object.assign(S, DEFAULTS, p, { panelOpen: true, advOpen: S.advOpen, persist: S.persist });
       sync(); changed();
     });
     $('pct-reset').addEventListener('click', () => {
-      Object.assign(S, DEFAULTS, { panelOpen: true, advOpen: S.advOpen });
+      Object.assign(S, DEFAULTS, { panelOpen: true, advOpen: S.advOpen, persist: S.persist });
       $('pct-preset').value = ''; sync(); changed();
     });
     $('pct-usave').addEventListener('click', () => {
@@ -305,7 +319,7 @@
     $('pct-uload').addEventListener('click', () => {
       try {
         const u = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
-        if (u) { Object.assign(S, DEFAULTS, u, { panelOpen: true, advOpen: S.advOpen }); sync(); changed(); }
+        if (u) { Object.assign(S, DEFAULTS, u, { panelOpen: true, advOpen: S.advOpen, persist: S.persist }); sync(); changed(); }
       } catch (e) { /* ignore */ }
     });
     $('pct-dump').addEventListener('click', () => {
