@@ -13,6 +13,7 @@ Extension chỉ đổi cách hiển thị trong trình duyệt của bạn. Nó 
 | Gamma | SVG filter. Gamma nhỏ hơn 1 làm sáng vùng tối, hợp với điểm thưa |
 | Bão hòa, hue, thang xám | CSS filter |
 | Đảo màu | Đảo màu toàn bộ canvas WebGL để có nền trắng. Preset "Nền trắng" kèm xoay hue 180° để giữ lại màu |
+| Màu theo độ cao | Chèn mã vào vertex shader để tô màu theo trục z (xanh dương thấp, đỏ cao). Chọn khoảng độ cao bằng hai thanh trượt. Tắt khi shader không có vertex color |
 | Màu điểm | Ghi đè uniform `diffuse` khi vẽ point cloud (tùy chọn) |
 | Màu nền | Ghi đè `clearColor` của WebGL (tùy chọn) |
 | Preset | Có sẵn: Mặc định, Rõ nét, Điểm thưa (LiDAR 32 tia), Nền trắng. Có thêm một slot **Lưu của tôi / Tải của tôi** |

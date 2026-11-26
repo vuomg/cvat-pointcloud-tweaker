@@ -3,6 +3,11 @@
 Định dạng theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/), phiên bản theo [SemVer](https://semver.org/lang/vi/).
 
 ## [Unreleased]
+### Changed
+- Bảng chỉnh gọn hơn: mặc định chỉ hiện Preset, Kích thước, Độ sáng, Tương phản và ô Tô màu theo độ cao. Các tham số còn lại nằm trong mục **Nâng cao** (đóng sẵn, trạng thái mở/đóng được nhớ). Hai thanh độ cao chỉ hiện khi bật Tô màu theo độ cao.
+
+### Added
+- **Tô màu theo độ cao** (trục z, mét): xanh dương là thấp, đỏ là cao, kèm hai thanh trượt chọn khoảng độ cao. Cách làm: chèn mã vào vertex shader của point cloud khi shader được nạp. Chưa kiểm chứng trên CVAT thật.
 ### Fixed
 - **Đổi màu điểm** không còn làm đổi màu cuboid. Màu chỉ được ghi đè khi vẽ point cloud (từ 1000 điểm trở lên).
 

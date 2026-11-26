@@ -21,6 +21,12 @@ Kích thước phụ thuộc uniform tên `size`.
 - Màu dựa trên uniform `diffuse`. Nếu point cloud mang màu theo từng điểm (vertex color), màu riêng sẽ che màu ghi đè.
 - Kiểm tra bằng **Log uniform** xem `diffuse` có trong danh sách không.
 
+## Tô màu theo độ cao không hoạt động
+- Cạnh ô tích hiện **(chưa hỗ trợ)** nghĩa là extension không tìm thấy shader point cloud phù hợp (không có `vColor` hoặc cấu trúc khác). Tải lại trang sau khi bật extension, vì shader chỉ được chèn lúc nạp.
+- Nếu toàn bộ điểm cùng một màu, chỉnh lại hai thanh **Độ cao thấp nhất / cao nhất**. Mặc định -2 m đến 4 m, mặt đường của LiDAR gắn trên nóc xe thường nằm quanh -1,7 m.
+- Tính năng giả định trục z hướng lên. Nếu dữ liệu của bạn dùng trục khác, màu sẽ không theo độ cao thật.
+- Khi bật màu theo độ cao, tùy chọn **Đổi màu điểm** bị bỏ qua.
+
 ## Phím tắt của CVAT bị kích hoạt khi gõ trong bảng
 Bảng đã chặn sự kiện phím bên trong nó. Nếu vẫn bị, hãy báo kèm phiên bản CVAT.
 

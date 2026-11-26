@@ -15,7 +15,9 @@
   const USER_KEY = 'cvatPcTweak.user';
   const DEFAULTS = {
     size: 1, brightness: 1, contrast: 1, gamma: 1, saturate: 1, hue: 0, grayscale: 0, invert: false,
-    tintOn: false, tint: '#ffffff', bgOn: false, bg: '#000000', panelOpen: false,
+    tintOn: false, tint: '#ffffff', bgOn: false, bg: '#000000',
+    heightOn: false, hMin: -2, hMax: 4,
+    panelOpen: false, advOpen: false,
   };
   const PRESETS = {
     'Mặc định': {},
@@ -32,6 +34,29 @@
   const progLoc = new WeakMap();   // program  -> { size, diffuse }
   const baseVal = new WeakMap();   // location -> giá trị gốc three.js đặt
 
+  // Shader tô màu theo độ cao (trục z của point cloud, đơn vị mét): xanh dương (thấp) -> đỏ (cao).
+  let heightInjected = false;
+  const HEIGHT_DECL =
+    'uniform float pctOn;\nuniform float pctMin;\nuniform float pctMax;\n' +
+    'vec3 pctRamp(float t){ t=clamp(t,0.0,1.0); float h=(1.0-t)*0.72;' +
+    ' return clamp(abs(fract(vec3(h)+vec3(1.0,0.6666667,0.3333333))*6.0-3.0)-1.0,0.0,1.0); }\n';
+  const injectHeight = (src) => {
+    if (typeof src !== 'string' || src.indexOf('gl_PointSize') < 0 || src.indexOf('vColor') < 0) return src;
+    if (src.indexOf('pctRamp') >= 0) return src;
+    const m = /gl_Position\s*=\s*projectionMatrix\s*\*\s*mvPosition\s*;/.exec(src);
+    const mainAt = src.search(/void\s+main\s*\(/);
+    if (!m || mainAt < 0) return src;
+    const isVec4 = /(varying|out)\s+vec4\s+vColor/.test(src);
+    const assign = isVec4
+      ? 'vColor = vec4(pctRamp((position.z - pctMin) / (pctMax - pctMin)), 1.0);'
+      : 'vColor = pctRamp((position.z - pctMin) / (pctMax - pctMin));';
+    const body = `${m[0]}\n  if (pctOn > 0.5) { ${assign} }`;
+    let out = src.slice(0, m.index) + body + src.slice(m.index + m[0].length);
+    out = out.slice(0, mainAt) + HEIGHT_DECL + out.slice(mainAt);
+    heightInjected = true;
+    return out;
+  };
+
   const hexToRgb = (hex) => {
     const n = parseInt(hex.slice(1), 16);
     return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
@@ -42,14 +67,20 @@
     proto.__pctPatched = true;
     const o = {};
     ['getUniformLocation', 'useProgram', 'uniform1f', 'uniform3f', 'uniform3fv',
-      'drawArrays', 'drawElements', 'clearColor', 'clear']
+      'drawArrays', 'drawElements', 'clearColor', 'clear', 'shaderSource']
       .forEach((n) => { o[n] = proto[n]; });
+
+    proto.shaderSource = function (shader, source) {
+      let src = source;
+      try { src = injectHeight(source); } catch (e) { src = source; }
+      return o.shaderSource.call(this, shader, src);
+    };
 
     proto.getUniformLocation = function (program, name) {
       const loc = o.getUniformLocation.call(this, program, name);
       if (loc) {
         seenUniforms.add(name);
-        if (name === 'size' || name === 'diffuse') {
+        if (name === 'size' || name === 'diffuse' || name === 'pctOn' || name === 'pctMin' || name === 'pctMax') {
           locName.set(loc, name);
           let e = progLoc.get(program);
           if (!e) { e = {}; progLoc.set(program, e); }
@@ -111,8 +142,13 @@
       if (e.size && baseVal.has(e.size)) {
         o.uniform1f.call(gl, e.size, baseVal.get(e.size) * S.size);
       }
+      if (e.pctOn && e.pctMin && e.pctMax) {
+        o.uniform1f.call(gl, e.pctOn, S.heightOn ? 1 : 0);
+        o.uniform1f.call(gl, e.pctMin, S.hMin);
+        o.uniform1f.call(gl, e.pctMax, Math.max(S.hMax, S.hMin + 0.01));
+      }
       if (e.diffuse && baseVal.has(e.diffuse)) {
-        const tint = S.tintOn && count >= MIN_CLOUD_POINTS;
+        const tint = S.tintOn && !S.heightOn && count >= MIN_CLOUD_POINTS;
         const c = tint ? hexToRgb(S.tint) : baseVal.get(e.diffuse);
         o.uniform3f.call(gl, e.diffuse, c[0], c[1], c[2]);
       }
@@ -173,14 +209,20 @@
   const changed = () => { save(); applyCss(); nudge(); };
 
   const SLIDERS = [
-    { k: 'size', label: 'Kích thước điểm', min: 0.3, max: 8, step: 0.1, fmt: (v) => '×' + v.toFixed(1) },
-    { k: 'brightness', label: 'Độ sáng', min: 0.3, max: 4, step: 0.05, fmt: (v) => v.toFixed(2) },
-    { k: 'contrast', label: 'Tương phản', min: 0.3, max: 4, step: 0.05, fmt: (v) => v.toFixed(2) },
-    { k: 'gamma', label: 'Gamma (nhỏ = sáng vùng tối)', min: 0.3, max: 3, step: 0.05, fmt: (v) => v.toFixed(2) },
-    { k: 'saturate', label: 'Độ bão hòa màu', min: 0, max: 3, step: 0.05, fmt: (v) => v.toFixed(2) },
-    { k: 'hue', label: 'Xoay sắc độ (hue)', min: 0, max: 360, step: 5, fmt: (v) => v + '°' },
-    { k: 'grayscale', label: 'Thang xám', min: 0, max: 1, step: 0.05, fmt: (v) => v.toFixed(2) },
+    // g: basic = luôn hiện; height = chỉ hiện khi bật màu theo độ cao; adv = nằm trong mục "Nâng cao" (mặc định đóng)
+    { g: 'basic', k: 'size', label: 'Kích thước điểm', min: 0.3, max: 8, step: 0.1, fmt: (v) => '×' + v.toFixed(1) },
+    { g: 'basic', k: 'brightness', label: 'Độ sáng', min: 0.3, max: 4, step: 0.05, fmt: (v) => v.toFixed(2) },
+    { g: 'basic', k: 'contrast', label: 'Tương phản', min: 0.3, max: 4, step: 0.05, fmt: (v) => v.toFixed(2) },
+    { g: 'height', k: 'hMin', label: 'Độ cao thấp nhất (xanh dương)', min: -10, max: 10, step: 0.1, fmt: (v) => v.toFixed(1) + ' m' },
+    { g: 'height', k: 'hMax', label: 'Độ cao cao nhất (đỏ)', min: -5, max: 20, step: 0.1, fmt: (v) => v.toFixed(1) + ' m' },
+    { g: 'adv', k: 'gamma', label: 'Gamma (nhỏ = sáng vùng tối)', min: 0.3, max: 3, step: 0.05, fmt: (v) => v.toFixed(2) },
+    { g: 'adv', k: 'saturate', label: 'Độ bão hòa màu', min: 0, max: 3, step: 0.05, fmt: (v) => v.toFixed(2) },
+    { g: 'adv', k: 'hue', label: 'Xoay sắc độ (hue)', min: 0, max: 360, step: 5, fmt: (v) => v + '°' },
+    { g: 'adv', k: 'grayscale', label: 'Thang xám', min: 0, max: 1, step: 0.05, fmt: (v) => v.toFixed(2) },
   ];
+  const sliderHtml = (g) => SLIDERS.filter((s) => s.g === g).map((s) =>
+    `<label>${s.label}: <span id="pct-${s.k}-v"></span></label>` +
+    `<input id="pct-${s.k}" type="range" min="${s.min}" max="${s.max}" step="${s.step}">`).join('');
 
   function buildUi() {
     const svgHolder = document.createElement('div');
@@ -204,17 +246,20 @@
     panel.innerHTML =
       '<b>Point Cloud Tweaker</b>' +
       '<label>Preset</label><select id="pct-preset"><option value="">— chọn —</option>' + presetOptions + '</select>' +
-      SLIDERS.map((s) =>
-        `<label>${s.label}: <span id="pct-${s.k}-v"></span></label>` +
-        `<input id="pct-${s.k}" type="range" min="${s.min}" max="${s.max}" step="${s.step}">`).join('') +
+      sliderHtml('basic') +
+      '<div class="row"><input id="pct-heightOn" type="checkbox"><label for="pct-heightOn">Tô màu theo độ cao</label>' +
+      '<span id="pct-hstat" style="color:#f90"></span></div>' +
+      '<div id="pct-hrange">' + sliderHtml('height') + '</div>' +
+      '<div class="row"><button id="pct-advbtn"></button></div>' +
+      '<div id="pct-adv">' + sliderHtml('adv') +
       '<div class="row"><input id="pct-invert" type="checkbox"><label for="pct-invert">Đảo màu (nền trắng)</label></div>' +
       '<div class="row"><input id="pct-tintOn" type="checkbox"><label for="pct-tintOn">Đổi màu điểm</label>' +
       '<input id="pct-tint" type="color"></div>' +
       '<div class="row"><input id="pct-bgOn" type="checkbox"><label for="pct-bgOn">Đổi màu nền</label>' +
       '<input id="pct-bg" type="color"></div>' +
-      '<div class="row"><button id="pct-reset">Đặt lại</button><button id="pct-usave">Lưu của tôi</button>' +
-      '<button id="pct-uload">Tải của tôi</button></div>' +
-      '<div class="row"><button id="pct-dump">Log uniform</button></div>';
+      '<div class="row"><button id="pct-usave">Lưu của tôi</button><button id="pct-uload">Tải của tôi</button>' +
+      '<button id="pct-dump">Log uniform</button></div></div>' +
+      '<div class="row"><button id="pct-reset">Đặt lại</button></div>';
 
     const $ = (id) => panel.querySelector('#' + id);
     const sync = () => {
@@ -222,6 +267,11 @@
         $('pct-' + s.k).value = S[s.k];
         $('pct-' + s.k + '-v').textContent = s.fmt(Number(S[s.k]));
       });
+      $('pct-hrange').style.display = S.heightOn ? 'block' : 'none';
+      $('pct-adv').style.display = S.advOpen ? 'block' : 'none';
+      $('pct-advbtn').textContent = S.advOpen ? '▾ Ẩn nâng cao' : '▸ Nâng cao';
+      $('pct-heightOn').checked = !!S.heightOn;
+      $('pct-hstat').textContent = S.heightOn && !heightInjected ? '(chưa hỗ trợ)' : '';
       $('pct-invert').checked = !!S.invert;
       $('pct-tintOn').checked = !!S.tintOn; $('pct-tint').value = S.tint;
       $('pct-bgOn').checked = !!S.bgOn; $('pct-bg').value = S.bg;
@@ -231,6 +281,8 @@
     SLIDERS.forEach((s) => {
       $('pct-' + s.k).addEventListener('input', (e) => { S[s.k] = parseFloat(e.target.value); sync(); changed(); });
     });
+    $('pct-advbtn').addEventListener('click', () => { S.advOpen = !S.advOpen; sync(); save(); });
+    $('pct-heightOn').addEventListener('change', (e) => { S.heightOn = e.target.checked; sync(); changed(); });
     $('pct-invert').addEventListener('change', (e) => { S.invert = e.target.checked; changed(); });
     $('pct-tintOn').addEventListener('change', (e) => { S.tintOn = e.target.checked; changed(); });
     $('pct-tint').addEventListener('input', (e) => { S.tint = e.target.value; changed(); });
@@ -240,11 +292,11 @@
     $('pct-preset').addEventListener('change', (e) => {
       const p = PRESETS[e.target.value];
       if (!p) return;
-      Object.assign(S, DEFAULTS, p, { panelOpen: true });
+      Object.assign(S, DEFAULTS, p, { panelOpen: true, advOpen: S.advOpen });
       sync(); changed();
     });
     $('pct-reset').addEventListener('click', () => {
-      Object.assign(S, DEFAULTS, { panelOpen: true });
+      Object.assign(S, DEFAULTS, { panelOpen: true, advOpen: S.advOpen });
       $('pct-preset').value = ''; sync(); changed();
     });
     $('pct-usave').addEventListener('click', () => {
@@ -253,7 +305,7 @@
     $('pct-uload').addEventListener('click', () => {
       try {
         const u = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
-        if (u) { Object.assign(S, DEFAULTS, u, { panelOpen: true }); sync(); changed(); }
+        if (u) { Object.assign(S, DEFAULTS, u, { panelOpen: true, advOpen: S.advOpen }); sync(); changed(); }
       } catch (e) { /* ignore */ }
     });
     $('pct-dump').addEventListener('click', () => {
